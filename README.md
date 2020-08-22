@@ -2,7 +2,7 @@
 
 This repository contains the main  docker-compose configuration and helper files I use to manage my current home network. I used [htpcBeginner's](https://github.com/htpcBeginner) guides and their [docker-traefik](https://github.com/htpcBeginner/docker-traefik) setup as a great starting point (and stole a bunch of stuff) then tweaked it to my own needs and experimented with other stuff. 
 
-As of writing this (and assuming I haven't updated it and forgot to update this readme) the entire thing runs in a RaspberryPi 4 4GB which honestly it's starting to show its limits, specially when it comes to I/O operations. It works and its totally usable but don't think I'd be adding much more to this until I either split the load between other rPis or, more likely, move everything to a more powerful server. 
+As of writing this (and assuming I haven't updated it and forgot to update this readme) the entire thing runs on a RaspberryPi 4 4GB which honestly it's starting to show its limits, specially when it comes to I/O operations. It works and is totally usable but don't think I'd be adding much more to this until I either split the load between other rPis or, more likely, move everything to a more powerful server. 
 
 
 __NOTE:__ I tried to use multi-arch containers wherever possible but for some apps I had to specify ARM images. If planning to use this in an x86/x64 system you'd have to replace those images with their suitable alternatives. 
