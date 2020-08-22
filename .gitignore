@@ -1,0 +1,12 @@
+# Probably the worst way to do this. 
+# I suck at .gitignore stuff. 
+
+# Excluding everything by default. 
+*
+
+# Including loose files.
+!README.md
+!.gitignore
+!docker-compose.yml
+!env.placeholder
+
