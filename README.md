@@ -87,12 +87,12 @@ This is a great step-by-step guide on how to setup Authelia, create the initial 
 * Home Assistant: Home automation hub with integrations for many different services, brands and appliances. 
 * Room Assistant: Room-based presence tracking using Raspberry Pis and Bluetooth/BLE devices. 
 * Node-red: Flow-based development tool used to automate IoT devices. 
+* Mosquitto: MQTT broker for IoT integration. 
 
 ### Data Storage
 * Redis: Key-Value storage for caching purposes. 
 * MariaDB: MySQL fork. 
 * InfluxDB: Time series DB used to store metrics from many different systems. 
-* Mosquitto: MQTT broker for IoT integration. 
 
 ### Utilities
 * Socket-proxy: Allows more granular control over services wanting to access the Docker socket. 
