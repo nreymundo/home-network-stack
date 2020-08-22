@@ -1,0 +1,488 @@
+version: "3.7"
+
+###############################################
+################## NETWORKS ###################
+###############################################
+
+networks:
+  proxy:
+    external:
+      name: proxy
+  socket_proxy:
+    external:
+      name: socket_proxy
+  apps:
+    external:
+      name: apps
+  default:
+    driver: bridge
+
+
+services:
+###############################################
+################## INGRESS ####################
+###############################################
+
+# Traefik 2 - Reverse Proxy
+  traefik:
+    container_name: traefik
+    image: traefik:chevrotin # the chevrotin tag refers to v2.2.x
+    restart: unless-stopped
+    command: # CLI arguments
+      - --global.checkNewVersion=true
+      - --global.sendAnonymousUsage=true
+      - --entryPoints.http.address=:80
+      - --entryPoints.https.address=:443
+      # Allow these IPs to set the X-Forwarded-* headers - Cloudflare IPs: https://www.cloudflare.com/ips/
+      - --entrypoints.https.forwardedHeaders.trustedIPs=173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/12,172.64.0.0/13,131.0.72.0/22
+      - --entryPoints.traefik.address=:8080
+      - --api=true
+      - --log=true
+      - --log.level=INFO # (Default: error) DEBUG, INFO, WARN, ERROR, FATAL, PANIC
+      - --accessLog=true
+      - --accessLog.filePath=/traefik.log
+      - --accessLog.bufferingSize=100 # Configuring a buffer of 100 lines
+      - --accessLog.filters.statusCodes=400-499
+      - --providers.docker=true
+      - --providers.docker.endpoint=tcp://socket-proxy:2375
+      - --providers.docker.defaultrule=HostHeader(`{{ index .Labels "com.docker.compose.service" }}.$DOMAINNAME`)
+      - --providers.docker.exposedByDefault=false
+      # Add dns-cloudflare as default certresolver for all services. Also enables TLS and no need to specify on individual services
+      - --entrypoints.https.http.tls.certresolver=dns-cloudflare
+      - --entrypoints.https.http.tls.domains[0].main=$DOMAINNAME
+      - --entrypoints.https.http.tls.domains[0].sans=*.$DOMAINNAME
+      - --providers.docker.network=proxy
+      - --providers.docker.swarmMode=false
+      - --providers.file.directory=/rules # Load dynamic configuration from one or more .toml or .yml files in a directory
+      - --providers.file.watch=true # Only works on top level files in the rules folder
+      # - --certificatesResolvers.dns-cloudflare.acme.caServer=https://acme-staging-v02.api.letsencrypt.org/directory # LetsEncrypt Staging Server - uncomment when testing
+      - --certificatesResolvers.dns-cloudflare.acme.email=$CLOUDFLARE_EMAIL
+      - --certificatesResolvers.dns-cloudflare.acme.storage=/acme.json
+      - --certificatesResolvers.dns-cloudflare.acme.dnsChallenge.provider=cloudflare
+      - --certificatesResolvers.dns-cloudflare.acme.dnsChallenge.resolvers=1.1.1.1:53,1.0.0.1:53
+      - --certificatesResolvers.dns-cloudflare.acme.dnsChallenge.delayBeforeCheck=90 # To delay DNS check and reduce LE hitrate
+      # Pushing metrics to InfluxDB
+      - --metrics.influxdb=true
+      - --metrics.influxdb.address=http://${INFLUXDB_HOST}:8086
+      - --metrics.influxdb.protocol=http
+      - --metrics.influxdb.database=traefik
+      - --metrics.influxdb.username=${INFLUXDB_USERNAME}
+      - --metrics.influxdb.password=${INFLUXDB_PASSWORD}
+      - --metrics.influxdb.addEntryPointsLabels=true
+      - --metrics.influxdb.addServicesLabels=true
+      - --metrics.influxdb.pushInterval=30s
+    networks:
+      - socket_proxy
+      - proxy
+      - apps
+    depends_on:
+      - socket-proxy
+      - authelia
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      # https://www.reddit.com/r/docker/comments/c1wrep/traefik_reverse_proxy_question_docker_overlay/
+      - target: 80
+        published: 80
+        protocol: tcp
+        mode: host
+      - target: 443
+        published: 443
+        protocol: tcp
+        mode: host
+      - target: 8080
+        published: 8080
+        protocol: tcp
+        mode: host
+    volumes:
+      - $DOCKERDIR/shared:/shared
+      - $DOCKERDIR/traefik2/rules:/rules # file provider directory
+      - $DOCKERDIR/traefik2/acme/acme.json:/acme.json # cert location - you must touch this file and change permissions to 600
+      - $DOCKERDIR/traefik2/traefik.log:/traefik.log # for fail2ban - make sure to touch file before starting container
+    environment:
+      - TZ=$TZ
+      - CF_API_EMAIL=$CLOUDFLARE_EMAIL
+      - CF_API_KEY=$CLOUDFLARE_API_KEY
+      - WEBSOCKET_ENABLED="true"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      # HTTP-to-HTTPS Redirect
+      - "traefik.http.routers.http-catchall.entrypoints=http"
+      - "traefik.http.routers.http-catchall.rule=HostRegexp(`{host:.+}`)"
+      - "traefik.http.routers.http-catchall.middlewares=redirect-to-https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      # HTTP Routers
+      - "traefik.http.routers.traefik-rtr.entrypoints=https"
+      - "traefik.http.routers.traefik-rtr.rule=HostHeader(`ingress.$DOMAINNAME`)"
+      ## Services - API
+      - "traefik.http.routers.traefik-rtr.service=api@internal"
+      ## Middlewares
+      - "traefik.http.routers.traefik-rtr.middlewares=chain-authelia@file"
+
+      
+  # Authelia (Lite) - Self-Hosted Single Sign-On and Two-Factor Authentication
+  authelia:
+    container_name: authelia
+    image: authelia/authelia:latest
+    restart: always
+    networks:
+      - proxy
+      - apps
+    volumes:
+      - $DOCKERDIR/authelia:/config
+    environment:
+      - TZ=$TZ
+    depends_on:
+      - mariadb
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      ## HTTP Routers
+      - "traefik.http.routers.authelia-rtr.entrypoints=https"
+      - "traefik.http.routers.authelia-rtr.rule=HostHeader(`authelia.$DOMAINNAME`)"
+      ## Middlewares
+      - "traefik.http.routers.authelia-rtr.middlewares=chain-authelia@file"
+      ## HTTP Services
+      - "traefik.http.routers.authelia-rtr.service=authelia-svc"
+      - "traefik.http.services.authelia-svc.loadbalancer.server.port=9091"
+
+###############################################
+############## HOME AUTOMATION ################
+###############################################
+
+  homeassistant:
+    container_name: homeassistant
+    image: homeassistant/raspberrypi4-homeassistant:stable
+    volumes:
+      - $DOCKERDIR/home-assistant:/config
+      - /etc/localtime:/etc/localtime:ro
+    network_mode: host
+    ports:
+      - 8123:8123
+    environment:
+      - TZ=$TZ
+    depends_on:
+      - mosquitto
+      - room-assistant
+    restart: unless-stopped
+    labels:
+      - com.centurylinklabs.watchtower.enable="false"
+
+  node-red:
+    container_name: node-red
+    image: nodered/node-red:latest-10
+    ports:
+      - 1880:1880
+    volumes:
+      - $DOCKERDIR/node-red:/data
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    networks:
+      - apps
+    depends_on:
+      - homeassistant
+    restart: unless-stopped
+
+  room-assistant:
+    container_name: room-assistant
+    image: mkerix/room-assistant
+    volumes:
+      - $DOCKERDIR/room-assistant/config:/room-assistant/config
+      - /etc/timezone:/etc/timezone:ro
+      - /var/run/dbus:/var/run/dbus
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+
+###############################################
+################# DASHBOARDS ##################
+###############################################
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    networks:
+      - proxy
+      - apps
+    security_opt:
+      - no-new-privileges:true
+    user: "0"
+    volumes:
+      - $DOCKERDIR/grafana:/var/lib/grafana
+    environment:
+      GF_INSTALL_PLUGINS: "grafana-clock-panel,grafana-simple-json-datasource,grafana-worldmap-panel,grafana-piechart-panel"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      ## HTTP Routers
+      - "traefik.http.routers.grafana-rtr.entrypoints=https"
+      - "traefik.http.routers.grafana-rtr.rule=HostHeader(`grafana.$DOMAINNAME`)"
+      ## Middlewares
+      - "traefik.http.routers.grafana-rtr.middlewares=chain-authelia@file"
+      ## HTTP Services
+      - "traefik.http.routers.grafana-rtr.service=grafana-svc"
+      - "traefik.http.services.grafana-svc.loadbalancer.server.port=3000"
+
+  portainer:
+    container_name: portainer
+    image: portainer/portainer:latest
+    restart: unless-stopped
+    networks:
+      - proxy
+      - socket_proxy
+      - apps
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - $DOCKERDIR/portainer/data:/data # Change to local directory if you want to save/transfer config locally
+    environment:
+      - TZ=$TZ
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      ## HTTP Routers
+      - "traefik.http.routers.portainer-rtr.entrypoints=https"
+      - "traefik.http.routers.portainer-rtr.rule=HostHeader(`portainer.$DOMAINNAME`)"
+      ## Middlewares
+      - "traefik.http.routers.portainer-rtr.middlewares=chain-authelia@file" # Authelia
+      ## HTTP Services
+      - "traefik.http.routers.portainer-rtr.service=portainer-svc"
+      - "traefik.http.services.portainer-svc.loadbalancer.server.port=9000"
+
+  heimdall:
+    container_name: heimdall
+    image: linuxserver/heimdall:latest
+    restart: unless-stopped
+    networks:
+      - proxy
+      - apps
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - $DOCKERDIR/heimdall:/config
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - TZ=$TZ
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      ## HTTP Routers
+      - "traefik.http.routers.heimdall-rtr.entrypoints=https"
+      - "traefik.http.routers.heimdall-rtr.rule=HostHeader(`$DOMAINNAME`)"
+      ## Middlewares
+      - "traefik.http.routers.heimdall-rtr.middlewares=chain-authelia@file"
+      ## HTTP Services
+      - "traefik.http.routers.heimdall-rtr.service=heimdall-svc"
+      - "traefik.http.services.heimdall-svc.loadbalancer.server.port=80"
+
+  # Glances - System Information
+  glances:
+    image: jdreinhardt/glances:release
+    container_name: glances
+    restart: unless-stopped
+    privileged: true
+    networks:
+      - proxy
+      - socket_proxy
+      - apps
+    depends_on:
+      - socket-proxy
+    security_opt:
+      - no-new-privileges:true
+    pid: host
+    # volumes:
+    #   - $DOCKERDIR/glances/glances.conf:/glances/conf/glances.conf # Use this if you want to add a glances.conf file
+    environment:
+      # GLANCES_OPT: "-C /glances/conf/glances.conf --quiet --export influxdb"
+      GLANCES_OPT: "-w"
+      DOCKER_HOST: tcp://socket-proxy:2375
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      ## HTTP Routers
+      - "traefik.http.routers.glances-rtr.entrypoints=https"
+      - "traefik.http.routers.glances-rtr.rule=HostHeader(`glances.$DOMAINNAME`)"
+      ## Middlewares
+      - "traefik.http.routers.glances-rtr.middlewares=chain-authelia@file"
+      ## HTTP Services
+      - "traefik.http.routers.glances-rtr.service=glances-svc"
+      - "traefik.http.services.glances-svc.loadbalancer.server.port=61208"
+
+  # Dozzle - Real-time Docker Log Viewer
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: dozzle
+    restart: unless-stopped
+    networks:
+      - proxy
+      - socket_proxy
+      - apps
+    depends_on:
+      - socket-proxy
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      DOZZLE_LEVEL: info
+      DOZZLE_TAILSIZE: 300
+      DOZZLE_FILTER: "status=running"
+      DOCKER_HOST: tcp://socket-proxy:2375
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.dozzle-rtr.entrypoints=https"
+      - "traefik.http.routers.dozzle-rtr.rule=HostHeader(`dozzle.$DOMAINNAME`)"
+      ## Middlewares
+      - "traefik.http.routers.dozzle-rtr.middlewares=chain-authelia@file"
+      ## HTTP Services
+      - "traefik.http.routers.dozzle-rtr.service=dozzle-svc"
+      - "traefik.http.services.dozzle-svc.loadbalancer.server.port=8080"
+
+###############################################
+############### DATA STORAGE ##################
+###############################################
+
+  redis:
+    container_name: redis
+    image: redis:latest
+    restart: unless-stopped
+    networks:
+      - apps
+    entrypoint: redis-server --appendonly yes
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - $DOCKERDIR/redis/data:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+
+  mariadb:
+    container_name: mariadb
+    image: linuxserver/mariadb
+    restart: unless-stopped
+    networks:
+      - apps
+    volumes:
+      - $DOCKERDIR/mariadb:/config
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD
+      - TZ=$TZ
+      - MYSQL_DATABASE=$MYSQL_DATABASE #optional
+      - MYSQL_USER=$MYSQL_USER #optional
+      - MYSQL_PASSWORD=$MYSQL_PASSWORD #optional
+    
+  influxdb:
+    container_name: influxdb
+    image: influxdb:latest
+    restart: unless-stopped
+    networks:
+      - apps
+      - proxy
+    ports:
+      - 8086:8086
+    volumes:
+      - $DOCKERDIR/influxdb:/var/lib/influxdb
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=$TZ
+      - INFLUXDB_DB=${INFLUXDB_DEFAULT_DB}
+      - INFLUXDB_ADMIN_USER=${INFLUXDB_USERNAME}
+      - INFLUXDB_ADMIN_PASSWORD=${INFLUXDB_PASSWORD}
+
+  mosquitto:
+    container_name: mosquitto
+    image: eclipse-mosquitto
+    ports:
+      - 1883:1883
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - $DOCKERDIR/mosquitto/config:/mosquitto/config
+      - $DOCKERDIR/mosquitto/data:/mosquitto/data
+      - $DOCKERDIR/mosquitto/log:/mosquitto/log
+    networks:
+      - apps
+    restart: unless-stopped
+
+###############################################
+################# UTILITIES ###################
+###############################################
+
+  # Docker Socket Proxy - Security Enchanced Proxy for Docker Socket
+  socket-proxy:
+    container_name: socket-proxy
+    image: tecnativa/docker-socket-proxy:arm32v7
+    restart: always
+    networks:
+      socket_proxy:
+        ipv4_address: 192.168.91.254
+    privileged: true
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    environment:
+      - LOG_LEVEL=info # debug,info,notice,warning,err,crit,alert,emerg
+      ## Variables match the URL prefix (i.e. AUTH blocks access to /auth/* parts of the API, etc.).
+      # 0 to revoke access.
+      # 1 to grant access.
+      ## Granted by Default
+      - EVENTS=1
+      - PING=1
+      - VERSION=1
+      ## Revoked by Default
+      # Security critical
+      - AUTH=0
+      - SECRETS=0
+      - POST=1 # Ouroboros
+      # Not always needed
+      - BUILD=0
+      - COMMIT=0
+      - CONFIGS=0
+      - CONTAINERS=1 # Traefik, portainer, etc.
+      - DISTRIBUTION=0
+      - EXEC=0
+      - IMAGES=1 # Portainer
+      - INFO=1 # Portainer
+      - NETWORKS=1 # Portainer
+      - NODES=0
+      - PLUGINS=0
+      - SERVICES=1 # Portainer
+      - SESSION=0
+      - SWARM=0
+      - SYSTEM=0
+      - TASKS=1 # Portaienr
+      - VOLUMES=1 # Portainer
+
+  # WatchTower - Automatic Docker Container Updates
+  watchtower:
+    image: talmai/rpi-watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    networks:
+      - socket_proxy
+    depends_on:
+      - socket-proxy
+    environment:
+      TZ: $TZ
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_REMOVE_VOLUMES: "true"
+      WATCHTOWER_INCLUDE_STOPPED: "true"
+      WATCHTOWER_NO_STARTUP_MESSAGE: "false"
+      WATCHTOWER_SCHEDULE: "0 30 4 * * *" # Everyday at 04:30
+      WATCHTOWER_NOTIFICATIONS: email
+      WATCHTOWER_NOTIFICATIONS_LEVEL: info
+      WATCHTOWER_NOTIFICATION_EMAIL_FROM: ${NOTIFICATION_EMAIL_FROM}
+      WATCHTOWER_NOTIFICATION_EMAIL_TO: ${NOTIFICATION_EMAIL_TO}
+      WATCHTOWER_NOTIFICATION_EMAIL_SERVER: ${NOTIFICATION_EMAIL_SERVER}
+      WATCHTOWER_NOTIFICATION_EMAIL_SERVER_PORT: ${NOTIFICATION_EMAIL_SERVER_PORT}
+      WATCHTOWER_NOTIFICATION_EMAIL_SERVER_USER: ${NOTIFICATION_EMAIL_USERNAME}
+      WATCHTOWER_NOTIFICATION_EMAIL_SERVER_PASSWORD: ${NOTIFICATION_EMAIL_PASSWORD}
+      WATCHTOWER_NOTIFICATION_EMAIL_DELAY: ${NOTIFICATION_EMAIL_DELAY}
+      DOCKER_HOST: tcp://socket-proxy:2375
+      DOCKER_API_VERSION: "1.40"
