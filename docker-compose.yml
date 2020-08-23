@@ -62,15 +62,18 @@ services:
       - --certificatesResolvers.dns-cloudflare.acme.dnsChallenge.resolvers=1.1.1.1:53,1.0.0.1:53
       - --certificatesResolvers.dns-cloudflare.acme.dnsChallenge.delayBeforeCheck=90 # To delay DNS check and reduce LE hitrate
       # Pushing metrics to InfluxDB
-      - --metrics.influxdb=true
-      - --metrics.influxdb.address=http://${INFLUXDB_HOST}:8086
-      - --metrics.influxdb.protocol=http
-      - --metrics.influxdb.database=traefik
-      - --metrics.influxdb.username=${INFLUXDB_USERNAME}
-      - --metrics.influxdb.password=${INFLUXDB_PASSWORD}
-      - --metrics.influxdb.addEntryPointsLabels=true
-      - --metrics.influxdb.addServicesLabels=true
-      - --metrics.influxdb.pushInterval=30s
+      # - --metrics.influxdb=true
+      # - --metrics.influxdb.address=http://${INFLUXDB_HOST}:8086
+      # - --metrics.influxdb.protocol=http
+      # - --metrics.influxdb.database=traefik
+      # - --metrics.influxdb.username=${INFLUXDB_USERNAME}
+      # - --metrics.influxdb.password=${INFLUXDB_PASSWORD}
+      # - --metrics.influxdb.addEntryPointsLabels=true
+      # - --metrics.influxdb.addServicesLabels=true
+      # - --metrics.influxdb.pushInterval=30s
+      - --metrics.prometheus=true
+      - --entryPoints.metrics.address=:8082
+      - --metrics.prometheus.entryPoint=metrics
     networks:
       - socket_proxy
       - proxy
@@ -228,6 +231,8 @@ services:
     user: "0"
     volumes:
       - $DOCKERDIR/grafana:/var/lib/grafana
+      - $DOCKERDIR/grafana/grafana.ini:/etc/grafana/grafana.ini
+      - $DOCKERDIR/grafana/provisioning:/etc/grafana/provisioning
     environment:
       GF_INSTALL_PLUGINS: "grafana-clock-panel,grafana-simple-json-datasource,grafana-worldmap-panel,grafana-piechart-panel"
     labels:
@@ -410,6 +415,25 @@ services:
       - INFLUXDB_DB=${INFLUXDB_DEFAULT_DB}
       - INFLUXDB_ADMIN_USER=${INFLUXDB_USERNAME}
       - INFLUXDB_ADMIN_PASSWORD=${INFLUXDB_PASSWORD}
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    user: "1000:1000"
+    networks:
+      - apps
+      - proxy
+    ports:
+      - 9090:9090
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/data'
+    environment:
+      - TZ=$TZ
+    volumes:
+      - $DOCKERDIR/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - $DOCKERDIR/prometheus/data:/data
+    restart: unless-stopped
 
 ###############################################
 ################# UTILITIES ###################

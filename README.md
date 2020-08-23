@@ -93,6 +93,7 @@ This is a great step-by-step guide on how to setup Authelia, create the initial 
 * Redis: Key-Value storage for caching purposes. 
 * MariaDB: MySQL fork. 
 * InfluxDB: Time series DB used to store metrics from many different systems. 
+* Prometheus: Pretty much the same as InfluxDB but different. 
 
 ### Utilities
 * Socket-proxy: Allows more granular control over services wanting to access the Docker socket. 
