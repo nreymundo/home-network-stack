@@ -10,3 +10,7 @@
 !docker-compose.yml
 !env.placeholder
 
+# Grafana
+!grafana
+!grafana/provisioning
+!grafana/provisioning/**

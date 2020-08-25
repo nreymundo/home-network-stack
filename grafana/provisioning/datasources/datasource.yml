@@ -1,0 +1,39 @@
+apiVersion: 1
+
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
+  - name: HomeAssistant
+    orgId: 1
+  - name: Traefik
+    orgId: 1
+  - name: Telegraf
+    orgId: 1
+  - name: OctoPrint
+    orgId: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    url: http://prometheus:9090
+    isDefault: false
+  - name: HomeAssistant
+    type: influxdb
+    url: http://influxdb:8086
+    database: home_assistant
+    isDefault: false
+  - name: Traefik
+    type: influxdb
+    url: http://influxdb:8086
+    database: traefik
+    isDefault: false
+  - name: Telegraf
+    type: influxdb
+    url: http://influxdb:8086
+    database: telegraf
+    isDefault: false
+  - name: OctoPrint
+    type: influxdb
+    url: http://influxdb:8086
+    database: octoprint
+    isDefault: false
