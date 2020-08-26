@@ -14,3 +14,7 @@
 !grafana
 !grafana/provisioning
 !grafana/provisioning/**
+
+# Prometheus
+!prometheus
+!prometheus/prometheus.yml
