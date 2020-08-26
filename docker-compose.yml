@@ -510,3 +510,19 @@ services:
       WATCHTOWER_NOTIFICATION_EMAIL_DELAY: ${NOTIFICATION_EMAIL_DELAY}
       DOCKER_HOST: tcp://socket-proxy:2375
       DOCKER_API_VERSION: "1.40"
+
+  # Collects information and metrics on all the containers running in the host system
+  cadvisor:
+    image: zcube/cadvisor:latest
+    container_name: cadvisor
+    networks:
+      - apps
+    environment:
+      TZ: $TZ
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /etc/localtime:/etc/localtime:ro
+    restart: unless-stopped
