@@ -170,7 +170,7 @@ services:
       - room-assistant
     restart: unless-stopped
     labels:
-      - com.centurylinklabs.watchtower.enable="false"
+      - com.centurylinklabs.watchtower.enable=false
 
   node-red:
     container_name: node-red
