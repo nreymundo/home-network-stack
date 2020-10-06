@@ -98,3 +98,4 @@ This is a great step-by-step guide on how to setup Authelia, create the initial 
 ### Utilities
 * Socket-proxy: Allows more granular control over services wanting to access the Docker socket. 
 * Watchtower: Automatically updates running docker containers. 
+* OpenSpeedTest: Lets you do offline speedtest over your local network or through the internet if exposed. I mainly use it for troubleshooting local network connectivity.   
