@@ -156,9 +156,10 @@ services:
 
   homeassistant:
     container_name: homeassistant
-    image: homeassistant/raspberrypi4-homeassistant:stable
+    image: homeassistant/raspberrypi4-homeassistant:0.117.5
     volumes:
       - $DOCKERDIR/home-assistant:/config
+      - $HOME/.ssh:/ssh:ro
       - /etc/localtime:/etc/localtime:ro
     network_mode: host
     ports:
@@ -169,8 +170,6 @@ services:
       - mosquitto
       - room-assistant
     restart: unless-stopped
-    labels:
-      - com.centurylinklabs.watchtower.enable=false
 
   node-red:
     container_name: node-red
@@ -499,15 +498,6 @@ services:
       WATCHTOWER_INCLUDE_STOPPED: "true"
       WATCHTOWER_NO_STARTUP_MESSAGE: "false"
       WATCHTOWER_SCHEDULE: "0 30 4 * * *" # Everyday at 04:30
-      WATCHTOWER_NOTIFICATIONS: email
-      WATCHTOWER_NOTIFICATIONS_LEVEL: info
-      WATCHTOWER_NOTIFICATION_EMAIL_FROM: ${NOTIFICATION_EMAIL_FROM}
-      WATCHTOWER_NOTIFICATION_EMAIL_TO: ${NOTIFICATION_EMAIL_TO}
-      WATCHTOWER_NOTIFICATION_EMAIL_SERVER: ${NOTIFICATION_EMAIL_SERVER}
-      WATCHTOWER_NOTIFICATION_EMAIL_SERVER_PORT: ${NOTIFICATION_EMAIL_SERVER_PORT}
-      WATCHTOWER_NOTIFICATION_EMAIL_SERVER_USER: ${NOTIFICATION_EMAIL_USERNAME}
-      WATCHTOWER_NOTIFICATION_EMAIL_SERVER_PASSWORD: ${NOTIFICATION_EMAIL_PASSWORD}
-      WATCHTOWER_NOTIFICATION_EMAIL_DELAY: ${NOTIFICATION_EMAIL_DELAY}
       DOCKER_HOST: tcp://socket-proxy:2375
       DOCKER_API_VERSION: "1.40"
 
