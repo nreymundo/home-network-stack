@@ -117,7 +117,7 @@ services:
       - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
       # HTTP Routers
       - "traefik.http.routers.traefik-rtr.entrypoints=https"
-      - "traefik.http.routers.traefik-rtr.rule=HostHeader(`ingress.$DOMAINNAME`)"
+      - "traefik.http.routers.traefik-rtr.rule=HostHeader(`traefik.$DOMAINNAME`)"
       ## Services - API
       - "traefik.http.routers.traefik-rtr.service=api@internal"
       ## Middlewares
@@ -156,14 +156,12 @@ services:
 
   homeassistant:
     container_name: homeassistant
-    image: homeassistant/raspberrypi4-homeassistant:0.117.5
+    image: homeassistant/raspberrypi4-homeassistant:$HASS_VERSION
     volumes:
       - $DOCKERDIR/home-assistant:/config
       - $HOME/.ssh:/ssh:ro
       - /etc/localtime:/etc/localtime:ro
     network_mode: host
-    ports:
-      - 8123:8123
     environment:
       - TZ=$TZ
     depends_on:
@@ -387,6 +385,8 @@ services:
       - apps
     volumes:
       - $DOCKERDIR/mariadb:/config
+    ports:
+      - 3306:3306
     environment:
       - PUID=1000
       - PGID=1000
@@ -523,6 +523,7 @@ services:
     container_name: openspeedtest
     networks:
       - proxy
+      - apps
     ports:
       - 8081:8080
     environment: 
