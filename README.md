@@ -1,3 +1,8 @@
+# Unmaintained!
+
+I haven't used this in about a year as I've moved from a RaspberryPi to a DYI computer running Unraid and an SFF build with Proxmox. 
+Keeping this around as I still reference it every now and then but will likely not update it again in the near future. 
+
 # Description
 
 This repository contains the main  docker-compose configuration and helper files I use to manage my current home network. I used [htpcBeginner's](https://github.com/htpcBeginner) guides and their [docker-traefik](https://github.com/htpcBeginner/docker-traefik) setup as a great starting point (and stole a bunch of stuff) then tweaked it to my own needs and experimented with other stuff. 
